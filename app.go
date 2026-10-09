@@ -2,11 +2,13 @@ package main
 
 import (
 	"errors"
+	"github.com/PuerkitoBio/goquery"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"text/template"
 )
 
 type Website struct {
@@ -21,16 +23,38 @@ type Template struct {
 
 func main() {
 
-	output, err := getSurgeList()
+	websites, err := getWebsitesFromSurge()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Error getting websites from Surge: %v", err)
 	}
-
-	var websites []Website
 
 	templates := getTemplates()
 
-	for _, line := range output {
+	renderedHtml, err := renderTemplate(templates[0].Path, websites)
+	if err != nil {
+		log.Fatalf("Error rendering template: %v", err)
+	}
+
+	println(renderedHtml)
+
+}
+
+func getWebsitesFromSurge() ([]Website, error) {
+
+	var websites []Website
+
+	out, err := exec.Command("surge", "list").Output()
+	if err != nil {
+		return nil, err
+	}
+
+	elements := strings.Split(string(out), "\n")
+
+	if len(elements) < 2 {
+		return nil, errors.New("unexpected output from surge list command, Check if surge is installed and logged in")
+	}
+
+	for _, line := range elements {
 		if line == "" {
 			continue
 		}
@@ -45,29 +69,7 @@ func main() {
 		websites = append(websites, Website{Name: name, URL: url})
 	}
 
-	for _, website := range websites {
-		log.Printf("Name: %s, URL: %s", website.Name, website.URL)
-	}
-
-	for _, template := range templates {
-		log.Printf("Template Name: %s, Path: %s", template.Name, template.Path)
-	}
-
-}
-
-func getSurgeList() ([]string, error) {
-	out, err := exec.Command("surge", "list").Output()
-	if err != nil {
-		return nil, err
-	}
-
-	elements := strings.Split(string(out), "\n")
-
-	if len(elements) < 2 {
-		return nil, errors.New("unexpected output from surge list command, Check if surge is installed and logged in")
-	}
-
-	return elements, nil
+	return websites, nil
 }
 
 func convertUrlToName(url string) string {
@@ -134,4 +136,55 @@ func getTemplates() []Template {
 	}
 
 	return templates
+}
+
+func renderTemplate(templatePath string, websites []Website) (string, error) {
+
+	// Read the template file
+	content, err := os.ReadFile(templatePath)
+	if err != nil {
+		return "", err
+	}
+
+	// Parse the template html file, found the template element in the content of the file with name "card", inside it will be the html code for each website card
+	htmlTemplate := string(content)
+
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(htmlTemplate))
+	if err != nil {
+		return "", err
+	}
+
+	contentDiv := doc.Find("div#content").First()
+
+	cardTemplateHtml := doc.Find("template#card").First()
+	cardHtml, err := cardTemplateHtml.Html()
+	if err != nil {
+		return "", errors.New("template with id 'card' not found in the template file")
+	}
+
+	cardTemplate, err := template.New("card").Parse(cardHtml)
+	if err != nil {
+		return "", err
+	}
+
+	for _, website := range websites {
+		var renderedCard strings.Builder
+		err := cardTemplate.Execute(&renderedCard, website)
+		if err != nil {
+			return "", err
+		}
+
+		// Append the rendered card to the content div
+		contentDiv.AppendHtml(renderedCard.String())
+	}
+
+	// Remove the template element from the document
+	cardTemplateHtml.Remove()
+
+	renderedHtml, err := doc.Html()
+	if err != nil {
+		return "", err
+	}
+
+	return renderedHtml, nil
 }
