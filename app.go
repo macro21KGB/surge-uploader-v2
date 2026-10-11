@@ -21,21 +21,74 @@ type Template struct {
 	Path string
 }
 
+func commandHelp() {
+	println("Usage: surge-uploader <command>")
+	println("Commands:")
+	println("  help\t\tShow this help message")
+	println("  list\t\tList all templates available in the surge-templates directory")
+	println(" <template>\tRender the specified template with the list of websites from Surge and create an index.html file")
+
+	os.Exit(0)
+}
+
 func main() {
 
+	if len(os.Args) < 2 || os.Args[1] == "help" || os.Args[1] == "--help" {
+		commandHelp()
+	}
+
+	command := os.Args[1]
+
+	switch command {
+	case "list":
+
+		templateDirectory := getTemplatesDirectory()
+		if templateDirectory == "" {
+			log.Fatalf("Error getting templates directory")
+		}
+
+		println("Templates directory: " + templateDirectory)
+		println("Available templates:")
+		templates := getTemplates()
+
+		for _, tpl := range templates {
+			println(tpl.Name)
+		}
+
+		os.Exit(0)
+	}
+
+	// Verify and Pick template
+	selectedTemplateName := command
+
+	templates := getTemplates()
+	templatePath := ""
+
+	for _, tpl := range templates {
+		if tpl.Name == selectedTemplateName {
+			templatePath = tpl.Path
+			break
+		}
+	}
+
+	if templatePath == "" {
+		log.Fatalf("Template %s not found. Use 'surge-uploader list' to see available templates.", selectedTemplateName)
+	}
+
+	// Get websites from Surge
 	websites, err := getWebsitesFromSurge()
 	if err != nil {
 		log.Fatalf("Error getting websites from Surge: %v", err)
 	}
 
-	templates := getTemplates()
-
-	renderedHtml, err := renderTemplate(templates[0].Path, websites)
+	renderedHtml, err := renderTemplate(templatePath, websites)
 	if err != nil {
 		log.Fatalf("Error rendering template: %v", err)
 	}
 
-	println(renderedHtml)
+	println("Rendering template to index.html")
+	os.WriteFile("index.html", []byte(renderedHtml), 0644)
+	println("Done! Open index.html in your browser to see the result.")
 
 }
 
@@ -63,7 +116,7 @@ func getWebsitesFromSurge() ([]Website, error) {
 			log.Printf("Skipping line: %s", line)
 			continue
 		}
-		url := "https://" + parts[1]
+		url := "https://" + strings.ReplaceAll(parts[1], "[39m", "")
 		name := convertUrlToName(url)
 
 		websites = append(websites, Website{Name: name, URL: url})
@@ -90,16 +143,23 @@ func convertUrlToName(url string) string {
 	return name
 }
 
+func getTemplatesDirectory() string {
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+
+	tplDir := filepath.Join(homeDir, ".surge-templates")
+	return tplDir
+}
+
 /*
 Get the list of templates from the home directory of the user under surge-templates. if there is not this direcotry create it and add a default template to it.
 */
 func getTemplates() []Template {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil
-	}
 
-	tplDir := filepath.Join(homeDir, ".surge-templates")
+	tplDir := getTemplatesDirectory()
 
 	// If the surge-templates directory does not exist, create it and add a default template
 	if _, err := os.Stat(tplDir); os.IsNotExist(err) {
@@ -109,7 +169,7 @@ func getTemplates() []Template {
 		}
 
 		defaultTpl := filepath.Join(tplDir, "default.html")
-		_ = os.WriteFile(defaultTpl, []byte("<!DOCTYPE html>\n<html>\n<head>\n\t<title>Default Template</title>\n</head>\n<body>\n\t{{.Content}}\n</body>\n</html>"), 0644)
+		_ = os.WriteFile(defaultTpl, []byte(getDefaultTemplate()), 0644)
 
 		return []Template{{Name: "default", Path: defaultTpl}}
 
@@ -155,11 +215,18 @@ func renderTemplate(templatePath string, websites []Website) (string, error) {
 	}
 
 	contentDiv := doc.Find("div#content").First()
+	if contentDiv.Length() == 0 {
+		return "", errors.New("div with id 'content' not found in the template file")
+	}
 
 	cardTemplateHtml := doc.Find("template#card").First()
 	cardHtml, err := cardTemplateHtml.Html()
 	if err != nil {
 		return "", errors.New("template with id 'card' not found in the template file")
+	}
+
+	if cardHtml == "" {
+		return "", errors.New("template with id 'card' is empty in the template file")
 	}
 
 	cardTemplate, err := template.New("card").Parse(cardHtml)
@@ -187,4 +254,47 @@ func renderTemplate(templatePath string, websites []Website) (string, error) {
 	}
 
 	return renderedHtml, nil
+}
+
+func getDefaultTemplate() string {
+	return `
+<!doctype html>
+<html>
+
+<head>
+	<title>Projects</title>
+	<style>
+		.card {
+			border: 1px solid #ccc;
+			padding: 10px;
+			margin: 10px;
+			border-radius: 5px;
+		}
+
+		#content {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.3rem;
+		}
+
+		.card-link {
+			color: #a3a3ff;
+			text-decoration: none;
+		}
+	</style>
+</head>
+
+<body>
+	<template id="card">
+		<div class="card">
+			<p class="card-title">{{.Name}}</p>
+			<a href="{{.URL}}" class="card-link">Visit</a>
+		</div>
+	</template>
+
+	<div id="content"></div>
+</body>
+
+</html>
+	`
 }
