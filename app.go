@@ -133,12 +133,12 @@ func convertUrlToName(url string) string {
 	// Remove any trailing slashes
 	url = strings.TrimSuffix(url, "/")
 
+	// Remove the .surge.sh suffix if present
+	url = strings.TrimSuffix(url, ".surge.sh")
+
 	// Replace dots and slashes with hyphens
 	name := strings.ReplaceAll(url, ".", "-")
 	name = strings.ReplaceAll(name, "/", "-")
-
-	// Remove the .surge.sh suffix if present
-	name = strings.TrimSuffix(name, ".surge.sh")
 
 	return name
 }
