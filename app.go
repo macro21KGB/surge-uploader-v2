@@ -2,13 +2,15 @@ package main
 
 import (
 	"errors"
-	"github.com/PuerkitoBio/goquery"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"text/template"
+
+	"github.com/PuerkitoBio/goquery"
 )
 
 type Website struct {
@@ -116,7 +118,8 @@ func getWebsitesFromSurge() ([]Website, error) {
 			log.Printf("Skipping line: %s", line)
 			continue
 		}
-		url := "https://" + strings.ReplaceAll(parts[1], "[39m", "")
+		cleanedPart := stripAnsiAndControl(parts[1])
+		url := "https://" + cleanedPart
 		name := convertUrlToName(url)
 
 		websites = append(websites, Website{Name: name, URL: url})
@@ -125,7 +128,22 @@ func getWebsitesFromSurge() ([]Website, error) {
 	return websites, nil
 }
 
+func stripAnsiAndControl(s string) string {
+	ansiRegex := regexp.MustCompile(`\x1b\[[0-9;]*[mK]`)
+	s = ansiRegex.ReplaceAllString(s, "")
+	s = strings.ReplaceAll(s, "[39m", "")
+	s = strings.Map(func(r rune) rune {
+		if r < 32 || r == 127 {
+			return -1
+		}
+		return r
+	}, s)
+	return s
+}
+
 func convertUrlToName(url string) string {
+	url = stripAnsiAndControl(url)
+
 	// Remove the protocol (http:// or https://)
 	url = strings.TrimPrefix(url, "http://")
 	url = strings.TrimPrefix(url, "https://")
