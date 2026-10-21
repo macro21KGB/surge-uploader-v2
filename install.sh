@@ -45,9 +45,9 @@ chmod +x "$TMP_FILE"
 
 echo "Installing ${BINARY_NAME} to ${INSTALL_DIR}..."
 if [ -w "$INSTALL_DIR" ]; then
-  mv "$TMP_FILE" "${INSTALL_DIR}/${BINARY_NAME}"
+  mv -f "$TMP_FILE" "${INSTALL_DIR}/${BINARY_NAME}"
 else
-  sudo mv "$TMP_FILE" "${INSTALL_DIR}/${BINARY_NAME}"
+  sudo mv -f "$TMP_FILE" "${INSTALL_DIR}/${BINARY_NAME}"
 fi
 
 echo "${BINARY_NAME} installed successfully! Run '${BINARY_NAME} help' to get started."
