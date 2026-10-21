@@ -6,7 +6,6 @@ It runs `surge list` to get your projects, then fills an HTML template with one 
 
 ## Requirements
 
-- [Go](https://go.dev/) (to build the tool)
 - The [Surge CLI](https://surge.sh/help/getting-started-with-surge), installed and logged in:
 
   ```sh
@@ -14,7 +13,17 @@ It runs `surge list` to get your projects, then fills an HTML template with one 
   surge login
   ```
 
-## Build
+## Install
+
+On Linux and macOS, you can install the latest release directly with:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/macro21KGB/surge-uploader-v2/master/install.sh | sh
+```
+
+### Build from source
+
+Requires [Go](https://go.dev/):
 
 ```sh
 go build -o surge-uploader .
