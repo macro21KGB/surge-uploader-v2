@@ -15,10 +15,16 @@ It runs `surge list` to get your projects, then fills an HTML template with one 
 
 ## Install
 
-On Linux and macOS, you can install the latest release directly with:
+On Linux and macOS, you can install the latest release to `~/.local/bin` with:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/macro21KGB/surge-uploader-v2/master/install.sh | sh
+```
+
+Make sure `~/.local/bin` is in your `PATH`. If it is not, add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.):
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
 ### Build from source

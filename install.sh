@@ -4,7 +4,7 @@ set -e
 
 REPO="macro21KGB/surge-uploader-v2"
 BINARY_NAME="surge-uploader"
-INSTALL_DIR="/usr/local/bin"
+INSTALL_DIR="$HOME/.local/bin"
 
 # Detect OS
 OS="$(uname -s)"
@@ -44,10 +44,17 @@ curl -fsSL "$DOWNLOAD_URL" -o "$TMP_FILE"
 chmod +x "$TMP_FILE"
 
 echo "Installing ${BINARY_NAME} to ${INSTALL_DIR}..."
-if [ -w "$INSTALL_DIR" ]; then
-  mv -f "$TMP_FILE" "${INSTALL_DIR}/${BINARY_NAME}"
-else
-  sudo mv -f "$TMP_FILE" "${INSTALL_DIR}/${BINARY_NAME}"
-fi
+mkdir -p "$INSTALL_DIR"
+mv -f "$TMP_FILE" "${INSTALL_DIR}/${BINARY_NAME}"
 
 echo "${BINARY_NAME} installed successfully! Run '${BINARY_NAME} help' to get started."
+
+case ":$PATH:" in
+  *":$INSTALL_DIR:"*) ;;
+  *)
+    echo ""
+    echo "Note: ${INSTALL_DIR} is not in your PATH."
+    echo "Add it by adding the following line to your shell profile (~/.bashrc, ~/.zshrc, etc.):"
+    echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+    ;;
+esac
