@@ -1,27 +1,12 @@
 package main
 
 import (
-	"errors"
 	"log"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"regexp"
-	"strings"
-	"text/template"
 
-	"github.com/PuerkitoBio/goquery"
+	"surge-uploader/m/v2/internal/surge"
+	"surge-uploader/m/v2/internal/templates"
 )
-
-type Website struct {
-	Name string
-	URL  string
-}
-
-type Template struct {
-	Name string
-	Path string
-}
 
 func commandHelp() {
 	println("Usage: surge-uploader <command>")
@@ -34,7 +19,6 @@ func commandHelp() {
 }
 
 func main() {
-
 	if len(os.Args) < 2 || os.Args[1] == "help" || os.Args[1] == "--help" {
 		commandHelp()
 	}
@@ -43,17 +27,16 @@ func main() {
 
 	switch command {
 	case "list":
-
-		templateDirectory := getTemplatesDirectory()
+		templateDirectory := templates.GetDirectory()
 		if templateDirectory == "" {
 			log.Fatalf("Error getting templates directory")
 		}
 
 		println("Templates directory: " + templateDirectory)
 		println("Available templates:")
-		templates := getTemplates()
+		tpls := templates.GetAll()
 
-		for _, tpl := range templates {
+		for _, tpl := range tpls {
 			println(tpl.Name)
 		}
 
@@ -63,10 +46,10 @@ func main() {
 	// Verify and Pick template
 	selectedTemplateName := command
 
-	templates := getTemplates()
+	tpls := templates.GetAll()
 	templatePath := ""
 
-	for _, tpl := range templates {
+	for _, tpl := range tpls {
 		if tpl.Name == selectedTemplateName {
 			templatePath = tpl.Path
 			break
@@ -78,12 +61,12 @@ func main() {
 	}
 
 	// Get websites from Surge
-	websites, err := getWebsitesFromSurge()
+	websites, err := surge.GetWebsites()
 	if err != nil {
 		log.Fatalf("Error getting websites from Surge: %v", err)
 	}
 
-	renderedHtml, err := renderTemplate(templatePath, websites)
+	renderedHtml, err := templates.Render(templatePath, websites)
 	if err != nil {
 		log.Fatalf("Error rendering template: %v", err)
 	}
@@ -91,228 +74,4 @@ func main() {
 	println("Rendering template to index.html")
 	os.WriteFile("index.html", []byte(renderedHtml), 0644)
 	println("Done! Open index.html in your browser to see the result.")
-
-}
-
-func getWebsitesFromSurge() ([]Website, error) {
-
-	var websites []Website
-
-	out, err := exec.Command("surge", "list").Output()
-	if err != nil {
-		return nil, err
-	}
-
-	elements := strings.Split(string(out), "\n")
-
-	if len(elements) < 2 {
-		return nil, errors.New("unexpected output from surge list command, Check if surge is installed and logged in")
-	}
-
-	for _, line := range elements {
-		if line == "" {
-			continue
-		}
-		parts := strings.Fields(line)
-		if len(parts) < 2 {
-			log.Printf("Skipping line: %s", line)
-			continue
-		}
-		cleanedPart := stripAnsiAndControl(parts[1])
-		url := "https://" + cleanedPart
-		name := convertUrlToName(url)
-
-		websites = append(websites, Website{Name: name, URL: url})
-	}
-
-	return websites, nil
-}
-
-func stripAnsiAndControl(s string) string {
-	ansiRegex := regexp.MustCompile(`\x1b\[[0-9;]*[mK]`)
-	s = ansiRegex.ReplaceAllString(s, "")
-	s = strings.ReplaceAll(s, "[39m", "")
-	s = strings.Map(func(r rune) rune {
-		if r < 32 || r == 127 {
-			return -1
-		}
-		return r
-	}, s)
-	return s
-}
-
-func convertUrlToName(url string) string {
-	url = stripAnsiAndControl(url)
-
-	// Remove the protocol (http:// or https://)
-	url = strings.TrimPrefix(url, "http://")
-	url = strings.TrimPrefix(url, "https://")
-
-	// Remove any trailing slashes
-	url = strings.TrimSuffix(url, "/")
-
-	// Remove the .surge.sh suffix if present
-	url = strings.TrimSuffix(url, ".surge.sh")
-
-	// Replace dots and slashes with hyphens
-	name := strings.ReplaceAll(url, ".", "-")
-	name = strings.ReplaceAll(name, "/", "-")
-
-	return name
-}
-
-func getTemplatesDirectory() string {
-
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-
-	tplDir := filepath.Join(homeDir, ".surge-templates")
-	return tplDir
-}
-
-/*
-Get the list of templates from the home directory of the user under surge-templates. if there is not this direcotry create it and add a default template to it.
-*/
-func getTemplates() []Template {
-
-	tplDir := getTemplatesDirectory()
-
-	// If the surge-templates directory does not exist, create it and add a default template
-	if _, err := os.Stat(tplDir); os.IsNotExist(err) {
-		err := os.MkdirAll(tplDir, 0755)
-		if err != nil {
-			return nil
-		}
-
-		defaultTpl := filepath.Join(tplDir, "default.html")
-		_ = os.WriteFile(defaultTpl, []byte(getDefaultTemplate()), 0644)
-
-		return []Template{{Name: "default", Path: defaultTpl}}
-
-	}
-
-	// Read the templates from the surge-templates directory, there are all .html files in the directory
-	files, err := os.ReadDir(tplDir)
-	if err != nil {
-		return nil
-	}
-
-	var templates []Template
-	for _, file := range files {
-		if file.IsDir() {
-			continue
-		}
-
-		if filepath.Ext(file.Name()) != ".html" {
-			continue
-		}
-
-		templates = append(templates, Template{Name: strings.TrimSuffix(file.Name(), ".html"), Path: filepath.Join(tplDir, file.Name())})
-
-	}
-
-	return templates
-}
-
-func renderTemplate(templatePath string, websites []Website) (string, error) {
-
-	// Read the template file
-	content, err := os.ReadFile(templatePath)
-	if err != nil {
-		return "", err
-	}
-
-	// Parse the template html file, found the template element in the content of the file with name "card", inside it will be the html code for each website card
-	htmlTemplate := string(content)
-
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(htmlTemplate))
-	if err != nil {
-		return "", err
-	}
-
-	contentDiv := doc.Find("div#content").First()
-	if contentDiv.Length() == 0 {
-		return "", errors.New("div with id 'content' not found in the template file")
-	}
-
-	cardTemplateHtml := doc.Find("template#card").First()
-	cardHtml, err := cardTemplateHtml.Html()
-	if err != nil {
-		return "", errors.New("template with id 'card' not found in the template file")
-	}
-
-	if cardHtml == "" {
-		return "", errors.New("template with id 'card' is empty in the template file")
-	}
-
-	cardTemplate, err := template.New("card").Parse(cardHtml)
-	if err != nil {
-		return "", err
-	}
-
-	for _, website := range websites {
-		var renderedCard strings.Builder
-		err := cardTemplate.Execute(&renderedCard, website)
-		if err != nil {
-			return "", err
-		}
-
-		// Append the rendered card to the content div
-		contentDiv.AppendHtml(renderedCard.String())
-	}
-
-	// Remove the template element from the document
-	cardTemplateHtml.Remove()
-
-	renderedHtml, err := doc.Html()
-	if err != nil {
-		return "", err
-	}
-
-	return renderedHtml, nil
-}
-
-func getDefaultTemplate() string {
-	return `
-<!doctype html>
-<html>
-
-<head>
-	<title>Projects</title>
-	<style>
-		.card {
-			border: 1px solid #ccc;
-			padding: 10px;
-			margin: 10px;
-			border-radius: 5px;
-		}
-
-		#content {
-			display: flex;
-			flex-wrap: wrap;
-			gap: 0.3rem;
-		}
-
-		.card-link {
-			color: #a3a3ff;
-			text-decoration: none;
-		}
-	</style>
-</head>
-
-<body>
-	<template id="card">
-		<div class="card">
-			<p class="card-title">{{.Name}}</p>
-			<a href="{{.URL}}" class="card-link">Visit</a>
-		</div>
-	</template>
-
-	<div id="content"></div>
-</body>
-
-</html>
-	`
 }
